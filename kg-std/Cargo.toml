@@ -1,0 +1,19 @@
+[package]
+name = "kg_std"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy = { version = "0.16.0", features = ["bevy_dev_tools"] }
+kg-core = { path = "../kg-core", default-features = false }
+cfg-if = "1.0"
+
+[features]
+desktop = ["kg-core/desktop"]
+web = ["kg-core/web"]
+
+
+[profile.release]
+opt-level = 'z'
+lto = true
+codegen-units = 1

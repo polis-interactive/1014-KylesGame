@@ -6,13 +6,13 @@ use bevy::{
     color::palettes::css::WHITE,
     prelude::*
 };
-use bevy_rand::{global::GlobalEntropy, prelude::WyRand};
+use bevy_rand::{global::GlobalEntropy, plugin::EntropyPlugin, prelude::WyRand};
 use rand::Rng;
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "web")] {
         use web_time::Instant;
-    } else if #[cfg(feature = "std")] {
+    } else if #[cfg(feature = "desktop")] {
         use std::time::Instant;
     } else {
         use embassy_time::Instant;
@@ -20,10 +20,9 @@ cfg_if::cfg_if! {
 }
 
 
-
 /* CONST */
 
-pub const BOARD_SIZE: u8 = 7;
+pub const BOARD_SIZE: u32 = 7;
 pub const PLAYER_MOVE_SPEED: Duration = Duration::from_millis(75);
 pub const ENEMY_MOVE_SPEED: Duration = Duration::from_millis(250);
 pub const DEATH_THROWS_SPEED: Duration = Duration::from_millis(250);
@@ -124,69 +123,77 @@ impl DirectionType {
 #[derive(Event)]
 pub struct InputEvent(pub DirectionType);
 
+/* SYSTEM SETS */
+
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct InputSet;
+
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CoreSet;
+
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct RenderSet;
+
 
 /* COMPONENTS */
 
 #[derive(Component, Default, Clone, Debug, PartialEq, Eq)]
-pub struct Position {
-    pub x: u8,
-    pub y: u8,
-}
+pub struct Position(pub UVec2);
 
 impl Position {
-    pub fn new (x: u8, y: u8) -> Self {
-        Position { x, y }
+    pub fn new (x: u32, y: u32) -> Self {
+        Self(UVec2 { x, y })
     }
 
-    pub fn new_square(pos: u8) -> Self {
+    pub fn new_square(pos: u32) -> Self {
         let mut position = Self::default();
         position.update_square(pos);
         position
     }
 
-    pub fn update_square(&mut self, position: u8) {
-        self.x = position;
-        self.y = position;
+    pub fn update_square(&mut self, position: u32) {
+        self.0.x = position;
+        self.0.y = position;
     }
 
     pub fn can_move(&self, direction: &DirectionType) -> bool {
         match direction {
-            DirectionType::Up => self.y < BOARD_SIZE - 1,
-            DirectionType::Left => self.x > 0,
-            DirectionType::Down => self.y > 0,
-            _ => self.x < BOARD_SIZE - 1,
+            DirectionType::Up => self.0.y < BOARD_SIZE - 1,
+            DirectionType::Left => self.0.x > 0,
+            DirectionType::Down => self.0.y > 0,
+            _ => self.0.x < BOARD_SIZE - 1,
         }
     }
 
     pub fn update_with_direction(&mut self, direction: DirectionType) {
         match direction {
             DirectionType::Up => {
-                self.y = (self.y + 1).min(BOARD_SIZE - 1);
+                self.0.y = (self.0.y + 1).min(BOARD_SIZE - 1);
             }
             DirectionType::UpLeft => {
-                self.x = self.x.saturating_sub(1);
-                self.y = (self.y + 1).min(BOARD_SIZE - 1);
+                self.0.x = self.0.x.saturating_sub(1);
+                self.0.y = (self.0.y + 1).min(BOARD_SIZE - 1);
             }
             DirectionType::Left => {
-                self.x = self.x.saturating_sub(1);
+                self.0.x = self.0.x.saturating_sub(1);
             }
             DirectionType::DownLeft => {
-                self.x = self.x.saturating_sub(1);
-                self.y = self.y.saturating_sub(1);
+                self.0.x = self.0.x.saturating_sub(1);
+                self.0.y = self.0.y.saturating_sub(1);
             }
             DirectionType::Down => {
-                self.y = self.y.saturating_sub(1);
+                self.0.y = self.0.y.saturating_sub(1);
             },
             DirectionType::DownRight => {
-                self.x = (self.x + 1).min(BOARD_SIZE - 1);
-                self.y = self.y.saturating_sub(1);
+                self.0.x = (self.0.x + 1).min(BOARD_SIZE - 1);
+                self.0.y = self.0.y.saturating_sub(1);
             },
             DirectionType::Right => {
-                self.x = (self.x + 1).min(BOARD_SIZE - 1);
+                self.0.x = (self.0.x + 1).min(BOARD_SIZE - 1);
             },
             DirectionType::UpRight => {
-                self.x = (self.x + 1).min(BOARD_SIZE - 1);
-                self.y = (self.y + 1).min(BOARD_SIZE - 1);
+                self.0.x = (self.0.x + 1).min(BOARD_SIZE - 1);
+                self.0.y = (self.0.y + 1).min(BOARD_SIZE - 1);
             },
         }
     }
@@ -301,7 +308,7 @@ impl Player {
     pub fn default_hue() -> u8 {
         85
     }
-    pub fn default_position() -> u8 {
+    pub fn default_position() -> u32 {
        BOARD_SIZE.div_euclid(2)
     }
     pub fn new() -> (Player, EntityColor, Position, EntityTimer) {
@@ -499,7 +506,7 @@ pub fn dying_exit(
 }
 
 
-pub fn in_game_exit_core(
+pub fn in_game_exit(
     mut commands: Commands,
     enemies: Query<Entity, With<Enemy>>,
     mut player_position: Single<&mut Position, With<Player>>,
@@ -508,4 +515,38 @@ pub fn in_game_exit_core(
         commands.entity(enemy).despawn();
     }
     player_position.update_square(Player::default_position());
+}
+
+
+/* PLUGIN */
+
+pub struct KgCorePlugin;
+
+impl Plugin for KgCorePlugin {
+    fn build(&self, app: &mut App) {
+        app
+            .init_state::<GameState>()
+            .add_sub_state::<InGameState>()
+            .add_event::<InputEvent>()
+            .add_plugins(EntropyPlugin::<WyRand>::default())
+            .add_systems(Startup, startup_core.in_set(CoreSet))
+            .add_systems(OnEnter(InGameState::Dying), dying_enter.in_set(CoreSet))
+            .add_systems(Update, (
+                    (
+                        home_update_wait_for_player_interaction
+                    ).run_if(in_state(GameState::Home)),
+                    (
+                        running_update_try_spawn_enemies,
+                        running_update_enemy_position,
+                        running_update_player_position
+                    ).chain().run_if(in_state(InGameState::Running)),
+                    (
+                        dying_update_death_throes
+                    ).run_if(in_state(InGameState::Dying)),
+                ).in_set(CoreSet)
+            )
+            .add_systems(OnExit(InGameState::Dying), dying_exit.in_set(CoreSet))
+            .add_systems(OnExit(GameState::InGame), in_game_exit.in_set(CoreSet))
+        ;
+    }
 }

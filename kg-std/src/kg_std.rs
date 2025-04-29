@@ -1,53 +1,74 @@
 
-use bevy::{color::palettes::css::{DIM_GREY, RED}, prelude::*, window::WindowResized};
+use bevy::{
+    color::palettes::css::{DIM_GREY, RED},
+    platform::collections::HashMap,
+    prelude::*,
+    window::WindowResized
+};
 
-use crate::kg_core::{DirectionType, Enemy, EntityColor, InputEvent, Player, Position, ShowDeathThroes, BOARD_SIZE};
+use kg_core::{CoreSet, DirectionType, EntityColor, InputEvent, Position, ShowDeathThroes, BOARD_SIZE};
 
 /* COMPONENTS */
 
 
 #[derive(Component)]
-#[require(EntityColor, Position, Mesh2d, MeshMaterial2d<ColorMaterial>, Transform)]
-pub struct Tile;
+#[require(Mesh2d, MeshMaterial2d<ColorMaterial>, Transform)]
+pub struct Tile(UVec2);
 
 impl Tile {
     fn new(
-        entity_color: &EntityColor, position: &Position, window_size: &Vec2, window_extent: &Vec2,
+        position: &UVec2,
+        window_size: &Vec2,
+        window_extent: &Vec2,
         meshes: &mut ResMut<Assets<Mesh>>,
         materials: &mut ResMut<Assets<ColorMaterial>>,
-    ) -> (Tile, Mesh2d, MeshMaterial2d<ColorMaterial>, Transform) {
-        let (width, height, x, y) = Tile::rect(position, window_size, window_extent);
+    ) -> (impl Bundle, AssetId<ColorMaterial>) {
+        let tile = Tile(position.clone());
+        let (width, height, x, y) = tile.rect(window_size, window_extent);
+        let material = materials.add(Tile::default_color());
+        let material_id = material.id();
         (
-            Tile,
-            Mesh2d(meshes.add(Rectangle::new(width, height))),
-            MeshMaterial2d(materials.add(entity_color.to_color())),
-            Transform::from_translation(Vec3::new(
-                x,
-                y,
-                0.0,
-            )),
+            (
+                tile,
+                Mesh2d(meshes.add(Rectangle::new(width, height))),
+                MeshMaterial2d(material),
+                Transform::from_translation(Vec3::new(
+                    x,
+                    y,
+                    0.0,
+                )),
+            ),
+            material_id
         )
     }
 
-    fn rect(position: &Position, window_size: &Vec2, window_extent: &Vec2) -> (f32, f32, f32, f32) {
+    fn default_color() -> Color {
+        Color::srgb_u8(43, 44, 47)
+    }
+
+    fn rect(&self, window_size: &Vec2, window_extent: &Vec2) -> (f32, f32, f32, f32) {
         let Vec2 { x: width, y: height} = window_size / BOARD_SIZE as f32;
-        let x = width * (position.x as f32) - window_extent.x + width * 0.5;
-        let y = height * (position.y as f32) - window_extent.y + height * 0.5;
+        let x = width * (self.0.x as f32) - window_extent.x + width * 0.5;
+        let y = height * (self.0.y as f32) - window_extent.y + height * 0.5;
         (width, height, x, y)
     }
 }
 
+#[derive(Resource, Default)]
+pub struct TileMaterialIndex {
+    pub map: HashMap<UVec2, AssetId<ColorMaterial>>,
+}
 
 #[derive(Component)]
 #[require(Mesh2d, MeshMaterial2d<ColorMaterial>, Transform)]
 pub struct GridLine {
     is_vertical: bool,
-    index: u8
+    index: u32
 }
 
 impl GridLine {
     fn new(
-        is_vertical: bool, index: u8, window_size: &Vec2, window_extent: &Vec2,
+        is_vertical: bool, index: u32, window_size: &Vec2, window_extent: &Vec2,
         meshes: &mut ResMut<Assets<Mesh>>,
         materials: &mut ResMut<Assets<ColorMaterial>>,
     ) -> (GridLine, Mesh2d, MeshMaterial2d<ColorMaterial>, Transform) {
@@ -60,7 +81,7 @@ impl GridLine {
             Transform::from_translation(Vec3::new(
                 x,
                 y,
-                0.0,
+                1.0,
             )),
         )
     }
@@ -95,9 +116,7 @@ pub fn startup_std(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
-    window: Single<&Window>,
-    // todo: this is jank
-    player: Single<(Entity, &EntityColor, &Position), With<Player>>
+    window: Single<&Window>
 ) {
 
     commands.spawn(Camera2d);
@@ -105,22 +124,36 @@ pub fn startup_std(
     let window_size = window.resolution.size();
     let window_extent = window_size.map(|f| f * 0.5);
 
-    for i in 1..BOARD_SIZE {
+    let mut map = HashMap::new();
+
+    for x in 0..=BOARD_SIZE  {
+
+        for y in 0..=BOARD_SIZE {
+            let position = UVec2 { x, y };
+            let (tile_bundle, material_id) = Tile::new(
+                &position, &window_size, &window_extent, &mut meshes, &mut materials
+            );
+            commands.spawn(tile_bundle);
+            map.insert(position, material_id);
+        }
+
+        if x == 0 || x == BOARD_SIZE {
+            continue;
+        }
+
         // vertical bar
-        commands.spawn(GridLine::new(true, i, &window_size, &window_extent, &mut meshes, &mut materials));
+        commands.spawn(GridLine::new(true, x, &window_size, &window_extent, &mut meshes, &mut materials));
         // horizontal bar
-        commands.spawn(GridLine::new(false, i, &window_size, &window_extent, &mut meshes, &mut materials));
+        commands.spawn(GridLine::new(false, x, &window_size, &window_extent, &mut meshes, &mut materials));
     }
 
-    commands.entity(player.0).insert(Tile::new(
-        &player.1, &player.2, &window_size, &window_extent, &mut meshes, &mut materials
-    ));
+    commands.insert_resource(TileMaterialIndex{ map });
 
 }
 
 pub fn update_handle_resize(
     mut grid_lines: Query<(&GridLine, &Mesh2d, &mut Transform), (With<GridLine>, Without<Tile>)>,
-    mut tiles: Query<(&Position, &Mesh2d, &mut Transform), With<Tile>>,
+    mut tiles: Query<(&Tile, &Mesh2d, &mut Transform), With<Tile>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut resize_reader: EventReader<WindowResized>,
 ) {
@@ -132,10 +165,10 @@ pub fn update_handle_resize(
             if let Some(mesh) = meshes.get_mut(&mesh2d.0) {
                 *mesh = Rectangle::new(width, height).into();
             }
-            transform.translation = Vec3::new(x, y, 0.0);
+            transform.translation = Vec3::new(x, y, 1.0);
         });
-        tiles.iter_mut().for_each(|(position, mesh2d, mut transform)| {
-            let (width, height, x, y) = Tile::rect(position, &window_size, &window_extent);
+        tiles.iter_mut().for_each(|(tile, mesh2d, mut transform)| {
+            let (width, height, x, y) = tile.rect(&window_size, &window_extent);
             if let Some(mesh) = meshes.get_mut(&mesh2d.0) {
                 *mesh = Rectangle::new(width, height).into();
             }
@@ -167,46 +200,55 @@ pub fn update_handle_keyboard(
     }
 }
 
-pub fn update_render_tiles(
-    mut tiles: Query<(&Position, &EntityColor, &mut Transform, &MeshMaterial2d<ColorMaterial>), With<Tile>>,
+pub fn update_render_clear_tiles(
+    tiles: Query<&MeshMaterial2d<ColorMaterial>, With<Tile>>,
+    show_death_throes: Res<ShowDeathThroes>,
     mut materials: ResMut<Assets<ColorMaterial>>,
-    window: Single<&Window>,
 ) {
-    let window_size = window.resolution.size();
-    let window_extent = window_size.map(|f| f * 0.5);
-    tiles.iter_mut().for_each(|(position, entity_color, mut transform, material)| {
-        let (_, _, x, y) = Tile::rect(position, &window_size, &window_extent);
-        transform.translation = Vec3::new(x, y, 0.0);
+    let base_color = if show_death_throes.get_value() {
+        Color::from(RED)
+    } else {
+        Tile::default_color()
+    };
+    tiles.iter().for_each(|material| {
         if let Some(m) = materials.get_mut(material.id()) {
+            *m = base_color.into()
+        }
+    });
+}
+
+pub fn update_render_populate_tiles(
+    entities: Query<(&Position, &EntityColor)>,
+    tile_material_index: ResMut<TileMaterialIndex>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) {
+    entities.iter().for_each(|(position, entity_color)| {
+        let material_id = tile_material_index.map.get(&position.0).unwrap();
+        if let Some(m) = materials.get_mut(*material_id) {
             *m = entity_color.to_color().into()
         }
     });
 }
 
-pub fn update_render_camera(
-    show_death_throes: Res<ShowDeathThroes>,
-    mut camera: Single<&mut Camera>,
-) {
-    if show_death_throes.get_value() {
-        camera.clear_color = ClearColorConfig::Custom(RED.into());
-    } else {
-        camera.clear_color = ClearColorConfig::default();
 
+/* PLUGINS */
+
+pub struct KgStdPlugin;
+
+impl Plugin for KgStdPlugin {
+    fn build(&self, app: &mut App) {
+        app
+        .add_systems(Startup,
+            startup_std.after(CoreSet)
+        )
+        .add_systems(Update, (
+            update_handle_keyboard.before(CoreSet),
+            update_handle_resize,
+            (
+                update_render_clear_tiles,
+                update_render_populate_tiles
+            ).chain().after(CoreSet)
+        ))
+        ;
     }
-}
-
-pub fn on_add_enemy(
-    trigger: Trigger<OnAdd, Enemy>,
-    mut commands: Commands,
-    query: Query<(&EntityColor, &Position), With<Enemy>>,
-    window: Single<&Window>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-) {
-    let window_size = window.resolution.size();
-    let window_extent = window_size.map(|f| f * 0.5);
-    let enemy_entity = query.get(trigger.target()).unwrap();
-    commands.entity(trigger.target()).insert(Tile::new(
-        enemy_entity.0, enemy_entity.1, &window_size, &window_extent, &mut meshes, &mut materials
-    ));
 }
