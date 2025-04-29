@@ -3,7 +3,7 @@
 [tasks.internal-build-web]
 private = true
 env = { "RUSTFLAGS" = '--cfg getrandom_backend="wasm_js"' }
-script = "cargo build --release --target wasm32-unknown-unknown --bin kg_web --features web"
+script = "cargo build --release --target wasm32-unknown-unknown --features web"
 
 [tasks.internal-clean-web]
 private = true
@@ -13,8 +13,12 @@ script = "find 'web/kyles-game' -mindepth 1 -delete"
 private = true
 script = "wasm-bindgen --out-dir web/kyles-game --out-name kg_wasm --target web target/wasm32-unknown-unknown/release/kg_web.wasm"
 
+[tasks.internal-optimize-web]
+private = true
+script = "wasm-opt -d -Oz -o web/kyles-game/kg_wasm_bg.wasm web/kyles-game/kg_wasm_bg.wasm"
+
 [tasks.build-web]
-dependencies = ["internal-build-web", "internal-clean-web", "internal-process-web"]
+dependencies = ["internal-build-web", "internal-clean-web", "internal-process-web", "internal-optimize-web"]
 
 [tasks.internal-run-web]
 private = true
@@ -23,5 +27,5 @@ script = "basic-http-server web"
 [tasks.run-web]
 dependencies = ["build-web", "internal-run-web"]
 
-[tasks.run-std]
-script = "cargo run --bin kg_std --features std"
+[tasks.run-desktop]
+script = "cargo run --features desktop"
