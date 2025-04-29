@@ -1,0 +1,28 @@
+[package]
+name = "kg_bevy"
+version = "0.1.0"
+edition = "2024"
+resolver = "3"
+
+[[bin]]
+name = "kg_std"
+path = "./bin/app_std.rs"
+required-features = ["std"]
+
+[[bin]]
+name = "kg_web"
+path = "./bin/app_std.rs"
+required-features = ["web"]
+
+[dependencies]
+bevy = { version = "0.16.0", features = ["bevy_dev_tools"] }
+rand = { version = "0.9.1", default-features = false }
+bevy_rand = { git = "https://github.com/fqidz/bevy_rand.git", rev = "55dff22", default-features = false, features = ["wyrand"]}
+web-time = { version = "1.1.0", optional = true}
+cfg-if = "1.0"
+
+[features]
+default = ["std"]
+std = []
+web = ["bevy_rand/wasm_js", "dep:web-time"]
+

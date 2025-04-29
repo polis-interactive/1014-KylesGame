@@ -1,0 +1,5 @@
+target/
+.vscode/
+web/kyles-game/*
+!web/kyels-game/.gitkeep
+.DS_STORE
