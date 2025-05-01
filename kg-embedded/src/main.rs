@@ -13,26 +13,23 @@ use bevy::platform::time::Instant;
 use bevy::prelude::*;
 use bevy::state::app::StatesPlugin;
 use bevy::time::TimePlugin;
-use defmt::{info, unwrap};
+use defmt::{info, unwrap, Format};
 use embassy_executor::{Executor, Spawner};
 use embassy_rp::adc::{Adc, Channel, Config, InterruptHandler as AdcInterruptHandler};
 use embassy_rp::bind_interrupts;
-use embassy_rp::clocks::RoscRng;
 use embassy_rp::gpio::{Level, Output, Pull};
 use embassy_rp::multicore::{spawn_core1, Stack};
 use embassy_rp::peripherals::PIO0;
 use embassy_rp::pio::{InterruptHandler as PioInterruptHandler, Pio};
 use embassy_rp::pio_programs::ws2812::{PioWs2812, PioWs2812Program};
-use kg_core::KgCorePlugin;
-use kg_embedded::{thumbstick_task, EmbassyPlugin, KgEmbeddedPlugin, Thumbstick, LED_COUNT};
+use kg_core::{GameState, InGameState, KgCorePlugin};
+use kg_embedded::{lighting_task, thumbstick_task, EmbassyPlugin, KgEmbeddedPlugin, Thumbstick, LED_COUNT};
 use portable_atomic::AtomicBool;
-use rand::RngCore;
 use core::sync::atomic::Ordering;
 use core::time::Duration as CoreDuration;
 use core::mem::MaybeUninit;
 use static_cell::StaticCell;
 use embedded_alloc::LlffHeap as Heap;
-use getrandom::Error as GetRandomError;
 use defmt_rtt as _;
 
 #[global_allocator]
@@ -66,7 +63,7 @@ fn core_panic(info: &core::panic::PanicInfo) -> ! {
     cortex_m::asm::udf();
 }
 
-static mut CORE1_STACK: Stack<4096> = Stack::new();
+static mut CORE1_STACK: Stack<8192> = Stack::new();
 static EXECUTOR0: StaticCell<Executor> = StaticCell::new();
 static EXECUTOR1: StaticCell<Executor> = StaticCell::new();
 
@@ -74,24 +71,6 @@ bind_interrupts!(struct Irqs {
     ADC_IRQ_FIFO => AdcInterruptHandler;
     PIO0_IRQ_0 => PioInterruptHandler<PIO0>;
 });
-
-
-#[unsafe(no_mangle)]
-unsafe extern "Rust" fn __getrandom_v03_custom(
-    dest: *mut u8,
-    len: usize,
-) -> Result<(), GetRandomError> {
-    let buf = unsafe {
-        // fill the buffer with zeros
-        core::ptr::write_bytes(dest, 0, len);
-        // create mutable byte slice
-        core::slice::from_raw_parts_mut(dest, len)
-    };
-    let mut rng = RoscRng;
-    rng.try_fill_bytes(buf).map_err(|_| {
-        GetRandomError::new_custom(1)
-    })
-}
 
 
 #[cortex_m_rt::entry]
@@ -120,21 +99,21 @@ fn main() -> ! {
     let program = PioWs2812Program::new(&mut common);
     let lights = PioWs2812::new(&mut common, sm0, p.DMA_CH0, p.PIN_12, &program);
 
-    info!("Initialize I/O core");
+    info!("Initialize bevy core");
 
     spawn_core1(
         p.CORE1,
         unsafe { &mut *core::ptr::addr_of_mut!(CORE1_STACK) },
         move || {
             let executor1 = EXECUTOR1.init(Executor::new());
-            executor1.run(|spawner| unwrap!(spawner.spawn(core1_task(spawner, thumbstick, lights))));
+            executor1.run(|spawner| unwrap!(spawner.spawn(core1_task(led))));
         },
     );
 
-    info!("Initialize bevy core");
+    info!("Initialize I/O core");
 
     let executor0 = EXECUTOR0.init(Executor::new());
-    executor0.run(|spawner| unwrap!(spawner.spawn(core0_task(led))));
+    executor0.run(|spawner| unwrap!(spawner.spawn(core0_task(spawner, thumbstick, lights))));
 }
 
 #[derive(Resource)]
@@ -156,12 +135,30 @@ impl LedResource {
     }
 }
 
+pub fn log_transitions<S: States + Format>(mut transitions: EventReader<StateTransitionEvent<S>>) {
+    // State internals can generate at most one event (of type) per frame.
+    let Some(transition) = transitions.read().last() else {
+        return;
+    };
+    let name = core::any::type_name::<S>();
+    let StateTransitionEvent { exited, entered } = transition;
+    match (exited, entered) {
+        (Some(o), Some(n)) => info!("{} transition: {:?} => {:?}", name, o, n),
+        (_, Some(n)) => info!("{} transition: N/A => {:?}", name, n),
+        (Some(o), _) => info!("{} transition: {:?} => N/A", name, o),
+        _ => info!("{} transition: idk...", name)
+
+    }
+    info!("Heap At transition: free={}", HEAP.free());
+}
+
+
 #[embassy_executor::task]
-async fn core0_task(led: Output<'static>) {
+async fn core1_task(led: Output<'static>) {
     
     info!("Initialize bevy");
 
-    info!("free={}", HEAP.free());
+    info!("PreBevy free={}", HEAP.free());
     
 
     let mut app = App::new();
@@ -179,8 +176,12 @@ async fn core0_task(led: Output<'static>) {
             KgCorePlugin
         ))
         .add_systems(PreStartup, || {
-            info!("free={}", HEAP.free());
+            info!("PreStartup free={}", HEAP.free());
         })
+        .add_systems(PostStartup, || {
+            info!("PostStartup free={}", HEAP.free());
+        })
+        .add_systems(Update, (log_transitions::<GameState>, log_transitions::<InGameState>))
         .insert_resource(
             LedResource {
                 last_flop: Instant::now(),
@@ -199,11 +200,10 @@ async fn core0_task(led: Output<'static>) {
 
 
 #[embassy_executor::task]
-async fn core1_task(
-    spawner: Spawner, thumbstick: Thumbstick, _lights: PioWs2812<'static, PIO0, 0, LED_COUNT>
+async fn core0_task(
+    spawner: Spawner, thumbstick: Thumbstick, lights: PioWs2812<'static, PIO0, 0, LED_COUNT>
 ) {
     info!("Initialize I/O");
-    info!("free={}", HEAP.free());
+    spawner.must_spawn(lighting_task(lights));
     spawner.must_spawn(thumbstick_task(thumbstick));
-    info!("free={}", HEAP.free());
 }

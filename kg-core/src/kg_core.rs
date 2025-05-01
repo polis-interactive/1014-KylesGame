@@ -7,9 +7,11 @@ use bevy::{
     prelude::*,
     platform::time::Instant
 };
-use bevy_rand::{global::GlobalEntropy, plugin::EntropyPlugin, prelude::WyRand};
-use rand::Rng;
+use rand::{rngs::SmallRng, Rng};
 
+
+use defmt::Format as DeFormat;
+use smart_leds::{hsv::{hsv2rgb, Hsv}, RGB8};
 
 /* CONST */
 
@@ -22,14 +24,14 @@ pub const MAX_ENEMIES: usize = 1;
 
 /* STATES */
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default, States)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default, States, DeFormat)]
 pub enum GameState {
     #[default]
     Home,
     InGame,
 }
 
-#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, SubStates)]
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, SubStates, DeFormat)]
 #[source(GameState = GameState::InGame)]
 #[states(scoped_entities)]
 pub enum InGameState {
@@ -89,7 +91,7 @@ impl DirectionType {
     }
 
     pub fn choose_simple_random(rng: &mut impl Rng) -> Self {
-        match rng.random_range(0..4) {
+        match rng.gen_range(0..4) {
             0 => DirectionType::Up,
             1 => DirectionType::Left,
             2 => DirectionType::Down,
@@ -194,7 +196,7 @@ impl Position {
     }
 
     pub fn random_enemy_position(direction: DirectionType, rng: &mut impl Rng) -> Self {
-        let random_cell = rng.random_range(0..BOARD_SIZE);
+        let random_cell = rng.gen_range(0..BOARD_SIZE);
         match direction {
             DirectionType::Up => Position::new(random_cell, 0),
             DirectionType::Left => Position::new(BOARD_SIZE, random_cell ),
@@ -239,11 +241,24 @@ impl EntityColor {
     }
 
     pub fn random_enemy_hue(rng: &mut impl Rng) -> Self {
-        let mut choice: u8 = rng.random();
+        let mut choice: u8 = rng.r#gen();
         if choice.abs_diff(Player::default_hue()) < 5 {
             choice = choice.wrapping_add(128);
         }
         EntityColor::Hue(choice)
+    }
+}
+
+impl Into<RGB8> for &EntityColor {
+    fn into(self) -> RGB8 {
+        match self {
+            EntityColor::Hue(h) => hsv2rgb(Hsv {
+                hue: *h,
+                sat: 255,
+                val: 255
+            }),
+            EntityColor::White => RGB8 { r: 255, g: 255, b: 255 },
+        }
     }
 }
 
@@ -383,6 +398,9 @@ impl ShowDeathThroes {
     }
 }
 
+#[derive(Resource)]
+pub struct GenericRand(pub SmallRng);
+
 
 /* SYSTEMS */
 
@@ -408,10 +426,10 @@ pub fn running_update_try_spawn_enemies(
     mut commands: Commands,
     mut last_enemy_direction: ResMut<LastEnemyDirection>,
     enemies: Query<(), With<Enemy>>,
-    mut rng: GlobalEntropy<WyRand>
+    mut rng: ResMut<GenericRand>
 ) {
     if enemies.iter().count() < MAX_ENEMIES {
-        commands.spawn(Enemy::new(rng.as_mut(), &mut last_enemy_direction.0));
+        commands.spawn(Enemy::new(&mut rng.0, &mut last_enemy_direction.0));
     }
 }
 
@@ -519,7 +537,6 @@ impl Plugin for KgCorePlugin {
             .init_state::<GameState>()
             .add_sub_state::<InGameState>()
             .add_event::<InputEvent>()
-            .add_plugins(EntropyPlugin::<WyRand>::default())
             .add_systems(Startup, startup_core.in_set(CoreSet))
             .add_systems(OnEnter(InGameState::Dying), dying_enter.in_set(CoreSet))
             .add_systems(Update, (

@@ -2,26 +2,42 @@
 #![no_std]
 
 extern crate alloc;
-use bevy::prelude::*;
-use kg_core::CoreSet;
+use bevy::{app::PluginGroupBuilder, prelude::*};
+use kg_core::GenericRand;
 
 mod embassy_plugin;
 pub use embassy_plugin::EmbassyPlugin;
 
+use embassy_rp::clocks::RoscRng;
+use lights::KgLightsPlugin;
+use rand::SeedableRng;
+use rand::rngs::SmallRng;
+
 mod thumbstick;
-use thumbstick::{ThumbstickChannel, update_proxy_thumbstick};
+use thumbstick::KgThumbstickPlugin;
 pub use thumbstick::{Thumbstick, thumbstick_task};
 
 mod lights;
-pub use lights::LED_COUNT;
+pub use lights::{LED_COUNT, lighting_task};
+
+#[derive(Default)]
+struct KgRandPlugin;
+
+impl Plugin for KgRandPlugin {
+    fn build(&self, app: &mut App) {
+        app
+            .insert_resource(GenericRand (SmallRng::from_rng(RoscRng).unwrap()))
+        ;
+    }
+}
 
 pub struct KgEmbeddedPlugin;
 
-impl Plugin for KgEmbeddedPlugin {
-    fn build(&self, app: &mut bevy::app::App) {
-        app
-            .insert_resource(ThumbstickChannel::new())
-            .add_systems(Update, update_proxy_thumbstick.before(CoreSet))
-        ;
+impl PluginGroup for KgEmbeddedPlugin {
+    fn build(self) -> PluginGroupBuilder {
+        PluginGroupBuilder::start::<Self>()
+            .add(KgRandPlugin)
+            .add(KgThumbstickPlugin)
+            .add(KgLightsPlugin)
     }
 }

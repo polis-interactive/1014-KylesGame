@@ -2,13 +2,16 @@ use defmt::info;
 use embassy_rp::adc::{Adc, Async, Channel as AdcChannel};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::{Channel as SyncChannel, Receiver};
+use embassy_sync::signal::Signal;
 use embassy_time::{Duration, Ticker};
-use kg_core::{DirectionType, InputEvent};
+use kg_core::{CoreSet, DirectionType, InputEvent};
 use bevy::prelude::*;
 
 const THUMBSTICK_CHANNEL_SIZE: usize = 10;
 static THUMBSTICK_CHANNEL: SyncChannel<CriticalSectionRawMutex, DirectionType, THUMBSTICK_CHANNEL_SIZE> = SyncChannel::new();
 const THUMBSTICK_TICK_RATE_IN_HZ: u64 = 30;
+
+static THUMBSTICK_START_SIGNAL: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 
 pub struct Thumbstick {
     adc: Adc<'static, Async>,
@@ -57,6 +60,8 @@ impl Thumbstick {
 
 #[embassy_executor::task]
 pub async fn thumbstick_task(mut thumbstick: Thumbstick) {
+    info!("Thumstick waiting for bevy to startup");
+    THUMBSTICK_START_SIGNAL.wait().await;
     let sender = THUMBSTICK_CHANNEL.sender();
     let mut ticker = Ticker::every(Duration::from_hz(THUMBSTICK_TICK_RATE_IN_HZ));
     info!("Runnng thumbstick");
@@ -69,15 +74,15 @@ pub async fn thumbstick_task(mut thumbstick: Thumbstick) {
 }
 
 #[derive(Resource)]
-pub struct ThumbstickChannel(
+struct ThumbstickChannel(
     Receiver<'static, CriticalSectionRawMutex, DirectionType, THUMBSTICK_CHANNEL_SIZE>
 );
 
 impl ThumbstickChannel {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self(THUMBSTICK_CHANNEL.receiver())
     }
-    pub fn receive(&mut self) -> Option<DirectionType> {
+    fn receive(&mut self) -> Option<DirectionType> {
         if let Ok(direction) = self.0.try_receive() {
             self.0.clear();
             Some(direction)
@@ -87,11 +92,27 @@ impl ThumbstickChannel {
     }
 }
 
-pub fn update_proxy_thumbstick(
+fn update_proxy_thumbstick(
     mut channel: ResMut<ThumbstickChannel>,
     mut event_writer: EventWriter<InputEvent>,
 ) {
     if let Some(event) = channel.receive() {
         event_writer.write(InputEvent(event));
+    }
+}
+
+#[derive(Default)]
+pub struct KgThumbstickPlugin;
+
+impl Plugin for KgThumbstickPlugin {
+    fn build(&self, app: &mut App) {
+        app
+            .insert_resource(ThumbstickChannel::new())
+            .add_systems(PostStartup, || {
+                // todo: maybe this should be pubsub? Alhtough on this project, won't be any more uses i dont think
+                THUMBSTICK_START_SIGNAL.signal(());
+            })
+            .add_systems(Update, update_proxy_thumbstick.before(CoreSet))
+        ;
     }
 }
