@@ -950,7 +950,8 @@ dependencies = [
 [[package]]
 name = "bevy_prng"
 version = "0.10.0"
-source = "git+https://github.com/fqidz/bevy_rand.git?rev=55dff22#55dff22c313ce6a17a8b742ecc46c7bab7ed5ae5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f633b4221b81eca851d37a2e9d6917c87cda3f9bcfb4bf00ed84e31aad4fcbd9"
 dependencies = [
  "bevy_reflect",
  "rand_core 0.9.3",
@@ -966,7 +967,8 @@ checksum = "86f1275dfb4cfef4ffc90c3fa75408964864facf833acc932413d52aa5364ba4"
 [[package]]
 name = "bevy_rand"
 version = "0.10.0"
-source = "git+https://github.com/fqidz/bevy_rand.git?rev=55dff22#55dff22c313ce6a17a8b742ecc46c7bab7ed5ae5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d4b8af236ce3fb5122d2e7219af44994aeab93b5a6fedaf0b3117b03bce435a"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -2546,9 +2548,7 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "bevy_rand",
- "cfg-if",
  "rand 0.9.1",
- "web-time",
 ]
 
 [[package]]
@@ -2558,6 +2558,7 @@ dependencies = [
  "bevy",
  "cfg-if",
  "kg-core",
+ "web-time",
 ]
 
 [[package]]
@@ -3354,6 +3355,9 @@ name = "portable-atomic"
 version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "350e9b48cbc6b0e028b0473b114454c6316e57336ee184ceab6e53f72c178b3e"
+dependencies = [
+ "critical-section",
+]
 
 [[package]]
 name = "portable-atomic-util"

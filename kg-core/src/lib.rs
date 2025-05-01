@@ -1,3 +1,4 @@
+#![no_std]
 
 mod kg_core;
 pub use kg_core::{

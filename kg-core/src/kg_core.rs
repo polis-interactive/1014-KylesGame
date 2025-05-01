@@ -4,20 +4,11 @@ use core::ops::Not;
 
 use bevy::{
     color::palettes::css::WHITE,
-    prelude::*
+    prelude::*,
+    platform::time::Instant
 };
 use bevy_rand::{global::GlobalEntropy, plugin::EntropyPlugin, prelude::WyRand};
 use rand::Rng;
-
-cfg_if::cfg_if! {
-    if #[cfg(feature = "web")] {
-        use web_time::Instant;
-    } else if #[cfg(feature = "desktop")] {
-        use std::time::Instant;
-    } else {
-        use embassy_time::Instant;
-    }
-}
 
 
 /* CONST */
