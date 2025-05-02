@@ -1,3 +1,4 @@
+
 use defmt::{info, warn};
 use embassy_rp::{peripherals::PIO0, pio_programs::ws2812::PioWs2812};
 use embassy_sync::{
@@ -113,13 +114,16 @@ fn update_render_proxy(
             }
         }
         entities.iter().for_each(|(position, entity_color)| {
-            info!("{:?} / {:?}", position.0.x, position.0.y);
-            // led_grid[position.0.x as usize][position.0.y as usize].clone_from(&entity_color.into()); 
+            if position.out_of_bounds() {
+                info!(" We are somehow out of bounds? ({:?}, {:?})", position.0.x, position.0.y);
+                return;
+            }
+            led_grid[position.0.x as usize][position.0.y as usize].clone_from(&entity_color.into()); 
         });
+        LED_READY_SIGNAL.signal(());
     } else {
         warn!("Couldn't obtain led lock...");
     }
-    LED_READY_SIGNAL.signal(());
 }
 
 #[derive(Default)]

@@ -1446,11 +1446,13 @@ name = "kg-embedded"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "cfg-if",
  "cortex-m",
  "cortex-m-rt",
  "defmt 0.3.100",
  "defmt-rtt",
  "embassy-executor",
+ "embassy-futures",
  "embassy-rp",
  "embassy-sync",
  "embassy-time",
@@ -1460,10 +1462,12 @@ dependencies = [
  "embedded-io",
  "embedded-io-async",
  "embedded-storage",
+ "embedded-storage-async",
  "kg-core",
  "panic-probe",
  "portable-atomic",
  "rand",
+ "sequential-storage",
  "smart-leds",
  "static_cell",
 ]
@@ -2037,6 +2041,16 @@ name = "semver-parser"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "388a1df253eca08550bef6c72392cfe7c30914bf41df5269b68cbd6ff8f570a3"
+
+[[package]]
+name = "sequential-storage"
+version = "4.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d8e933f534642c25b7341338c10e2250187c8cd198c3957ef6894265eefda86"
+dependencies = [
+ "defmt 0.3.100",
+ "embedded-storage-async",
+]
 
 [[package]]
 name = "serde"
