@@ -191,6 +191,10 @@ impl Position {
         }
     }
 
+    pub fn out_of_bounds(&self) -> bool {
+        self.0.x >= BOARD_SIZE || self.0.y >= BOARD_SIZE
+    }
+
     pub fn eq(&self, other: &Self) -> bool {
         self == other
     }
@@ -199,8 +203,8 @@ impl Position {
         let random_cell = rng.gen_range(0..BOARD_SIZE);
         match direction {
             DirectionType::Up => Position::new(random_cell, 0),
-            DirectionType::Left => Position::new(BOARD_SIZE, random_cell ),
-            DirectionType::Down => Position::new(random_cell, BOARD_SIZE ),
+            DirectionType::Left => Position::new(BOARD_SIZE - 1, random_cell ),
+            DirectionType::Down => Position::new(random_cell, BOARD_SIZE - 1 ),
             _ => Position::new(0, random_cell ),
         }
     }
