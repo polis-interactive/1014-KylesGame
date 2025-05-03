@@ -3,14 +3,24 @@ name = "kg_std"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "kg-std"
+path = "src/main.rs"
+
+[[bin]]
+name = "loop"
+path = "bin/loop.rs"
+
 [dependencies]
 bevy = { version = "0.16.0", features = ["bevy_dev_tools"] }
 kg-core = { path = "../kg-core", default-features = false }
 cfg-if = "1.0"
+web-time = { version = "1.1.0", optional = true}
 
 [features]
+default = ["desktop"]
 desktop = ["kg-core/desktop"]
-web = ["kg-core/web"]
+web = ["kg-core/web", "dep:web-time"]
 
 
 [profile.release]

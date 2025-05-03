@@ -1,0 +1,8 @@
+{
+    "rust-analyzer.cargo.target": "thumbv6m-none-eabi",
+    "rust-analyzer.cargo.allTargets": false,
+    "rust-analyzer.cargo.extraEnv": {
+        "getrandom_backend": "custom"
+    }
+//    "rust-analyzer.cargo.features": ["embedded"]
+}
